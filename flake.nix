@@ -1,35 +1,44 @@
 {
+  description = "Python";
+
   inputs = {
-    # nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    systems.url = "github:nix-systems/default";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { systems, nixpkgs, ... } @ inputs: let
-    eachSystem = f: nixpkgs.lib.genAttrs (import systems) (system: f nixpkgs.legacyPackages.${system});
-  in {
-    devShells = eachSystem (pkgs: {
-      default = pkgs.mkShell {
-        buildInputs = with pkgs; [
-          python3
-        ];
-        
-        shellHook = ''
-          # Create a virtual environment if not already created
-          if [ ! -d ".venv" ]; then
-            python3 -m venv .venv
-          fi
+  outputs = { self, nixpkgs, flake-utils }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = import nixpkgs { inherit system; };
+        python = pkgs.python3;
+        pythonPackages = python.pkgs;
+      in {
+        devShells.default = pkgs.mkShell {
+          buildInputs = [
+            python
+            pythonPackages.pip
+            pythonPackages.setuptools
+            pythonPackages.wheel
+          ];
+          shellHook = ''
+            python -m venv .venv
+            source .venv/bin/activate
+            pip install flask
 
-          # Activate the virtual environment
-          source .venv/bin/activate
+            if [ -f requirements.txt ]; then
+              pip install -r requirements.txt
+            fi
+          '';
+        };
 
-          # Install non-Nix packages using pip
-          pip install --upgrade pip
-          pip install flask
 
-          pip3 freeze > requirements.txt
-        '';
-      };
-    });
-  };
+	apps.default = {
+          type = "app";
+          program = toString (pkgs.writeShellScript "run-main" ''
+            #!/bin/sh
+            source .venv/bin/activate
+            python main.py
+          '');
+        };
+      });
 }
-
